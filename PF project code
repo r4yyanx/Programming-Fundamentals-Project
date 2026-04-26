@@ -1,0 +1,151 @@
+/**
+ * Project: Arduino Radar & Blind Spot Detection System
+ * Description: Uses ultrasonic sensors and a smoothing filter to provide 
+ * visual and audible distance alerts.
+ */
+
+// --- SENSOR PINS ---
+const int midTrig = 9;         // [cite: 3]
+const int midEcho = 10;        // [cite: 4]
+const int leftTrig = 11;       // [cite: 5]
+const int leftEcho = 12;       // [cite: 5]
+const int rightTrig = A0;      // [cite: 6]
+const int rightEcho = A1;      // [cite: 6]
+
+// --- OUTPUT PINS ---
+const int midRed = 2;          // [cite: 9]
+const int midYellow = 3;       // [cite: 10]
+const int midGreen = 4;        // [cite: 11]
+const int buzzer = 5;          // [cite: 12]
+const int leftRed = 6;         // [cite: 13]
+const int rightRed = A4;       // [cite: 14]
+
+// --- MODE & INPUT PINS ---
+const int touchPin = 7;        // [cite: 17]
+const int highwayLed = 32;     // [cite: 18]
+const int trafficLed = A3;     // [cite: 19]
+
+// --- GLOBAL VARIABLES ---
+bool highwayMode = false;      // [cite: 20]
+int lastTouchState = LOW;      // [cite: 21]
+
+// --- VARIABLES FOR SMOOTHING FILTER ---
+float smoothMid = 999;         // [cite: 23]
+float smoothLeft = 999;        // [cite: 24]
+float smoothRight = 999;       // [cite: 25]
+
+void setup() {
+  Serial.begin(9600);          // [cite: 27]
+
+  // Initialize Sensor Pins
+  pinMode(midTrig, OUTPUT);    // [cite: 29]
+  pinMode(midEcho, INPUT);     // [cite: 30]
+  pinMode(leftTrig, OUTPUT);   // [cite: 31]
+  pinMode(leftEcho, INPUT);    // [cite: 32]
+  pinMode(rightTrig, OUTPUT);  // [cite: 33]
+  pinMode(rightEcho, INPUT);   // [cite: 33]
+
+  // Initialize Indicator Pins
+  pinMode(midRed, OUTPUT);     // [cite: 34]
+  pinMode(midYellow, OUTPUT);  // [cite: 34, 35]
+  pinMode(midGreen, OUTPUT);   // [cite: 35]
+  pinMode(leftRed, OUTPUT);    // [cite: 36]
+  pinMode(rightRed, OUTPUT);   // [cite: 36]
+  pinMode(buzzer, OUTPUT);     // [cite: 37]
+  pinMode(touchPin, INPUT);    // [cite: 38]
+  pinMode(highwayLed, OUTPUT); // [cite: 39]
+  pinMode(trafficLed, OUTPUT); // [cite: 40]
+}
+
+// Helper function to calculate distance [cite: 41]
+int getDistance(int trig, int echo) {
+  digitalWrite(trig, LOW);             // [cite: 42]
+  delayMicroseconds(2);                // [cite: 43]
+  digitalWrite(trig, HIGH);            // [cite: 44]
+  delayMicroseconds(10);               // [cite: 45]
+  digitalWrite(trig, LOW);             // [cite: 46]
+  
+  long duration = pulseIn(echo, HIGH, 20000); // [cite: 47]
+  if (duration == 0) return 999;       // [cite: 48]
+  
+  return (duration * 0.034) / 2;       // [cite: 49, 51]
+}
+
+void loop() {
+  // 1. READ TOUCH SENSOR [cite: 53]
+  int touchState = digitalRead(touchPin); // [cite: 54]
+  
+  if (touchState == HIGH && lastTouchState == LOW) { // [cite: 54, 60]
+    highwayMode = !highwayMode;        // [cite: 56]
+    delay(50);                         // [cite: 57]
+  }
+  lastTouchState = touchState;         // [cite: 58]
+
+  // Update Mode LEDs
+  if (highwayMode) {                   // [cite: 59]
+    digitalWrite(highwayLed, HIGH);    // [cite: 61]
+    digitalWrite(trafficLed, LOW);     // [cite: 61]
+  } else {                             // [cite: 61]
+    digitalWrite(highwayLed, LOW);     // [cite: 63]
+    digitalWrite(trafficLed, HIGH);    // [cite: 63]
+  }
+
+  // 2. READ RAW SENSORS [cite: 64]
+  int rawMid = getDistance(midTrig, midEcho);   delay(15); // [cite: 66]
+  int rawLeft = getDistance(leftTrig, leftEcho); delay(15); // [cite: 67]
+  int rawRight = getDistance(rightTrig, rightEcho);         // [cite: 67]
+
+  // 3. SMOOTHING FILTER (40% Old Data + 60% New Data) [cite: 69]
+  smoothMid = (smoothMid * 0.4) + (rawMid * 0.6);       // [cite: 70, 71]
+  smoothLeft = (smoothLeft * 0.4) + (rawLeft * 0.6);    // [cite: 71, 72]
+  smoothRight = (smoothRight * 0.4) + (rawRight * 0.6); // [cite: 71, 73]
+
+  int midDist = (int)smoothMid;        // [cite: 74]
+  int leftDist = (int)smoothLeft;      // [cite: 74]
+  int rightDist = (int)smoothRight;    // [cite: 74]
+
+  // 4. SET THRESHOLDS BASED ON MODE [cite: 75]
+  int dangerZone, cautionZone, blindSpotZone; // [cite: 76]
+
+  if (highwayMode) {                   // [cite: 77]
+    dangerZone = 100;                  // [cite: 78]
+    cautionZone = 200;                 // [cite: 78]
+    blindSpotZone = 150;               // [cite: 78]
+  } else {                             // [cite: 78]
+    dangerZone = 50;                   // [cite: 80]
+    cautionZone = 100;                 // [cite: 80]
+    blindSpotZone = 80;                // [cite: 80]
+  }
+
+  // 5. UPDATE RADAR LEDS & BUZZER [cite: 81]
+  // Middle Bar Logic
+  if (midDist <= dangerZone) {         // [cite: 82]
+    digitalWrite(midRed, HIGH);        // [cite: 83]
+    digitalWrite(midYellow, LOW);      // [cite: 84]
+    digitalWrite(midGreen, LOW);       // [cite: 85]
+  } else if (midDist <= cautionZone) { // [cite: 86]
+    digitalWrite(midRed, LOW);         // [cite: 87]
+    digitalWrite(midYellow, HIGH);     // [cite: 88]
+    digitalWrite(midGreen, LOW);       // [cite: 89]
+  } else {                             // [cite: 90]
+    digitalWrite(midRed, LOW);         // [cite: 93]
+    digitalWrite(midYellow, LOW);      // [cite: 94]
+    digitalWrite(midGreen, HIGH);      // [cite: 95]
+  }
+
+  // Blind Spot Logic
+  if (leftDist <= blindSpotZone) digitalWrite(leftRed, HIGH); // [cite: 97]
+  else digitalWrite(leftRed, LOW);     // [cite: 98]
+
+  if (rightDist <= blindSpotZone) digitalWrite(rightRed, HIGH); // [cite: 99]
+  else digitalWrite(rightRed, LOW);    // [cite: 99]
+
+  // Buzzer Logic
+  if (midDist <= dangerZone || leftDist <= (blindSpotZone / 2) || rightDist <= (blindSpotZone / 2)) { // [cite: 101, 102]
+    digitalWrite(buzzer, HIGH);        // [cite: 103]
+  } else {                             // [cite: 104]
+    digitalWrite(buzzer, LOW);         // [cite: 105]
+  }
+
+  delay(15);                           // [cite: 108]
+}
